@@ -1,117 +1,132 @@
 ---
 name: video-analyze
-description: Analyze the content of a web video — transcribe, summarize, answer questions about what happens or what's said. Trigger when the user gives a URL and asks to "summarize", "transcribe", "explain what's in", "extract the key points from", or "what does this video say about X". Different from the `video-export` skill, which only downloads the file. Skip if the user only wants the file or a thumbnail.
+description: Analyze the content of a video — summarize, answer questions about what happens or what's said, extract key points. Trigger when the user gives a URL or a local video file and asks to "summarize", "transcribe", "explain what's in", "extract the key points from", or "what does this video say about X". Different from the `video-export` skill, which only downloads the file. Skip if the user only wants the file or a thumbnail.
 ---
 
 # video-analyze
 
-End-to-end pipeline for turning a public web video into structured analysis you can answer questions about. Uses Copilot-CLI-style agent loops (or run it directly from Claude Code — same pipeline either way).
+Primary tool: **`ponty`** — a CLI built on top of Google's Gemini API by [yanndebray/merleau](https://github.com/yanndebray/merleau). Gemini is the only major LLM with native video input (Claude doesn't take video; GPT-4o requires frame extraction); `ponty` lets you point at a YouTube URL or local file and ask in one command. Use it as the default unless one of the fallback cases below applies.
 
-## Pipeline
+## Default path — `ponty`
 
-```
-URL ─► yt-dlp ─► audio.m4a ─► whisper.cpp / faster-whisper ─► transcript.txt
-                                                              │
-                                                              ▼
-                                           Claude (or any LLM) ─► summary / Q&A
-```
-
-## Steps
-
-1. **Identify the platform.** YouTube and LinkedIn are the common cases; both go through yt-dlp. YouTube increasingly bot-blocks cloud-provider IPs (see `Known failure modes` below).
-
-2. **Get just the audio.** Full-quality video is wasteful when you only need text.
+1. **Confirm install.**
 
    ```bash
-   command -v yt-dlp >/dev/null || uv tool install yt-dlp
-
-   mkdir -p /tmp/vid && cd /tmp/vid
-   yt-dlp --no-warnings \
-          -f "bestaudio[ext=m4a]/bestaudio" \
-          --extract-audio --audio-format m4a \
-          -o "%(id)s.%(ext)s" \
-          "<URL>"
+   command -v ponty || uv tool install merleau
    ```
 
-   For login-walled content, add `--cookies-from-browser firefox` (or the browser the user is logged into).
+   Provides a single executable, `ponty`. Source / issues: https://github.com/yanndebray/merleau
 
-3. **Transcribe.** Three viable engines in 2026, ranked:
+2. **Set the API key** if not already set. The package reads `GOOGLE_API_KEY` via `python-dotenv`, so a `.env` next to the working directory or an exported env var both work.
 
-   - **faster-whisper** (Python wrapper around CTranslate2) — fastest, ~10× real-time on CPU for the `tiny.en` model, ~2× on `medium`.
+   ```bash
+   export GOOGLE_API_KEY="..."
+   ```
 
-     ```bash
-     uv run --with faster-whisper python3 -c "
-     from faster_whisper import WhisperModel
-     m = WhisperModel('small', device='cpu', compute_type='int8')
-     segs, info = m.transcribe('VIDEO_ID.m4a', vad_filter=True)
-     with open('transcript.txt', 'w') as f:
-         for s in segs: f.write(f'[{s.start:.1f}] {s.text.strip()}\n')
-     print(f'lang={info.language}, duration={info.duration:.0f}s')
-     "
-     ```
+3. **Run.**
 
-   - **whisper.cpp** — if no Python, C++ binary you can curl-install.
+   ```bash
+   # Default prompt: "Explain what happens in this video"
+   ponty "https://youtu.be/<id>"
 
-   - **OpenAI Whisper API** — paid, but useful for batch and for getting word-level timestamps.
+   # Custom prompt + export to markdown
+   ponty -p "List every CLI command shown, with the approximate timestamp." \
+         -e md \
+         "https://youtu.be/<id>"
 
-4. **Summarize / answer the question.** Feed the transcript to Claude (or whatever model you're driving). Pick the prompt to the task:
+   # Local file
+   ponty -p "Summarize the demo in 5 bullets." \
+         /path/to/recording.mp4
 
-   - **Summary:** "Summarize this video in 5 bullet points covering what the speaker demonstrates and what they conclude."
-   - **Specific question:** "Looking at this transcript, what tool does the speaker recommend for X?"
-   - **Feature extraction:** "List every CLI command and tool name mentioned, with the timestamp of first mention."
-   - **Style match:** "Was this a tutorial, a marketing demo, or a conference talk? Give one supporting timestamp."
+   # Switch model (more accurate / more expensive)
+   ponty -m gemini-2.5-pro <video>
 
-5. **Deliver back.** Send the summary as a chat message; attach the transcript file if the user wants it for reference. Don't attach the audio.
+   # Hide cost output (useful when piping)
+   ponty --no-cost <video>
+   ```
 
-## When you also need the visuals (not just audio)
+4. **Read the result.** `ponty` prints the analysis to stdout and shows token + cost info underneath. With `-e md` it also writes a `.md` file next to the video / next to cwd. Pipe to a file or to `claude` if you want post-processing.
 
-For demos where the speaker shows their screen and the relevant content is what's on the screen (CLI demos, IDE walkthroughs):
+## What ponty handles natively
+
+- **YouTube URLs** (the `youtube.com/watch?v=`, `youtu.be/`, and `youtube.com/shorts/` shapes) — Gemini fetches the video itself; you don't need yt-dlp.
+- **Local video files** — uploaded to Gemini's file API, processed, then queried.
+- **Long videos** — Gemini 2.5 Flash has a 2 M-token context, comfortable up to ~2 hours.
+- **Visual content** — because the model sees frames natively, it'll describe what's on screen, not just what's said. Useful for CLI / IDE demos.
+
+## Picking the prompt
+
+`ponty -p "..."`. The prompt drives everything; default is a generic "Explain what happens in this video", which is rarely what you actually want.
+
+| Task | Prompt to use |
+|---|---|
+| Tutorial / demo summary | `"Summarize what the speaker demonstrates and what they conclude. Note timestamps of key transitions."` |
+| Feature extraction (CLI demos) | `"List every command, tool, and flag the speaker types, in order, with approximate timestamps."` |
+| Q&A | `"Answer this question using only what the video shows: <question>. If the answer isn't in the video, say so."` |
+| Talk → bullet notes | `"You are taking notes for someone who can't attend. 6-8 bullets covering the main claims and any concrete numbers cited."` |
+| Determining content type | `"Is this a marketing demo, a tutorial, a conference talk, or a vlog? Cite one timestamp supporting the answer."` |
+
+## Fallback path — yt-dlp + whisper
+
+Use this when:
+
+- No Gemini API key available and the user doesn't want to set one up.
+- Cost matters and the video is long (Gemini bills per token; an hour of video is ~$0.10–0.40).
+- The user needs a **verbatim transcript with word-level timestamps** for editing or accessibility — `ponty` summarizes rather than transcribes.
 
 ```bash
-# Sample one frame per N seconds
-ffmpeg -i VIDEO_ID.mp4 -vf "fps=1/5" /tmp/vid/frame_%04d.png
+# Audio only — smaller, faster than full video
+yt-dlp -f "bestaudio[ext=m4a]/bestaudio" \
+       --extract-audio --audio-format m4a \
+       -o "%(id)s.%(ext)s" "<URL>"
+
+# Transcribe with faster-whisper (CPU)
+uv run --with faster-whisper python3 -c "
+from faster_whisper import WhisperModel
+m = WhisperModel('small', device='cpu', compute_type='int8')
+segs, info = m.transcribe('VIDEO_ID.m4a', vad_filter=True)
+with open('transcript.txt', 'w') as f:
+    for s in segs: f.write(f'[{s.start:.1f}] {s.text.strip()}\n')
+"
+
+# Summarize / Q&A with Claude (or any LLM you have available)
 ```
 
-Then hand the most relevant frames to a vision-capable model (Claude Sonnet 4.6 reads images directly) together with the transcript:
-
-> "These frames are sampled at 5-second intervals from a CLI demo. Tell me every command the speaker types."
-
-For a 5-minute video at 1 frame / 5 s that's 60 frames; for an hour, downsample harder (1 frame / 30 s, then upsample around interesting transcript spans).
+For login-walled or YouTube-bot-blocked URLs, add `--cookies-from-browser firefox` to the yt-dlp call.
 
 ## Known failure modes
 
 | Symptom | Cause | Fix |
-| --- | --- | --- |
-| `Sign in to confirm you're not a bot` | YouTube bot wall — most aggressive against cloud-provider IPs | `--cookies-from-browser firefox`, OR ask the user to paste a cookies.txt, OR run from a residential IP |
-| `RequestBlocked` from youtube-transcript-api | Same IP block, different endpoint | Same fix as above |
-| Whisper hallucinates after silence | Long silent stretches confuse it | Enable VAD: `vad_filter=True` (already in the snippet above) |
-| Wrong language detected | Mixed-language content | Force language: `transcribe(..., language='en')` |
-| Cadence stutter on a fast speaker | `tiny` model on rapid speech | Step up to `small` or `medium` — costs throughput, fixes accuracy |
-| Music-heavy video transcribes to nothing useful | Whisper is for speech | Skip transcription; sample frames + describe visually |
+|---|---|---|
+| `ponty: error: GOOGLE_API_KEY not set` | env var missing | `export GOOGLE_API_KEY=...` or drop into `.env` |
+| `Sign in to confirm you're not a bot` (yt-dlp fallback only) | YouTube bot wall, esp. on cloud IPs | `--cookies-from-browser firefox`; `ponty` itself doesn't hit this because Gemini fetches server-side |
+| Video over 2h | Exceeds Gemini's context | Pre-trim with `ffmpeg -i in.mp4 -t 7200 -c copy out.mp4` and analyze the segment most likely to contain the answer |
+| Gemini refuses (safety filter) | Triggered on adult / violent content classification | Acknowledge, summarize what you can from metadata + the user's own description |
+| Cost surprise | Verbose prompts on long videos = lots of output tokens | Use `gemini-2.5-flash` (default — cheap), keep prompts terse, or pre-segment the video |
 
 ## Don'ts
 
-- **Don't reproduce copyrighted creative content verbatim.** If the video is a song, comedy bit, audiobook, movie, or other creative work, refuse the full transcript and offer a summary or a few short quotes instead.
-- **Don't push the raw audio or transcript file to public hosts** without explicit user permission. Treat it as the user's private working copy.
-- **Don't run face/identity recognition on sampled frames.** If the user wants to know "who's in this video," ask them — that crosses a different line.
-- **Don't trust the transcript for legal or medical advice.** Whisper makes confident errors on technical terms.
+- **Don't reproduce copyrighted creative content verbatim.** If the video is a song, comedy bit, audiobook, movie, or other creative work, refuse a verbatim transcript and offer a summary or brief quotes instead.
+- **Don't run face / identity recognition** on the video. If the user asks "who's in this," ask back — that crosses a different line.
+- **Don't post the raw output to public hosts** without explicit user permission. The summary is the user's working copy.
+- **Don't trust ponty's output for legal or medical fact-finding.** Gemini hallucinates on technical terms and proper nouns at roughly the same rate as Whisper.
 
 ## Output template (when summarizing for delivery)
 
 ```
-**<Inferred title or topic>** — <duration> · <speaker name if obvious>
+**<Inferred title or topic>** — <duration> · <speaker if obvious>
 
 Key points:
-- <point 1, timestamp>
-- <point 2, timestamp>
-- <point 3, timestamp>
+- <point 1>
+- <point 2>
+- <point 3>
 
 Tools / names mentioned: <list>
 
 What the speaker concludes / recommends: <one sentence>
 
-Caveats: <anything Whisper got wrong that you noticed; anything the
-video shows visually that the transcript missed>
+Caveats: <anything the model seemed uncertain about, or that the
+video shows visually but the model misread>
 ```
 
-Trim to taste — short videos get 2–3 bullets, hour-long talks get 6–8.
+Trim to taste — short videos get 2-3 bullets, hour-long talks get 6-8.

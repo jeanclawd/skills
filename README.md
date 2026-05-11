@@ -9,7 +9,7 @@ A skill is a markdown file with YAML frontmatter that Claude Code can invoke whe
 | Skill | What it does |
 | --- | --- |
 | [`video-export`](video-export/SKILL.md) | Download a video from a public web URL (YouTube, LinkedIn, X, TikTok, …) via yt-dlp, hand the file back. |
-| [`video-analyze`](video-analyze/SKILL.md) | Transcribe + summarize the content of a web video. yt-dlp → faster-whisper → Claude. Optionally sample frames for visual demos. |
+| [`video-analyze`](video-analyze/SKILL.md) | Summarize / Q&A a web or local video. Default path uses [`ponty`](https://github.com/yanndebray/merleau) (Gemini-native video understanding); fallback to yt-dlp + whisper when a verbatim transcript is needed or no Gemini key is available. |
 
 ## Install
 
