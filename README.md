@@ -9,6 +9,7 @@ A skill is a markdown file with YAML frontmatter that Claude Code can invoke whe
 | Skill | What it does |
 | --- | --- |
 | [`video-export`](video-export/SKILL.md) | Download a video from a public web URL (YouTube, LinkedIn, X, TikTok, …) via yt-dlp, hand the file back. |
+| [`video-analyze`](video-analyze/SKILL.md) | Transcribe + summarize the content of a web video. yt-dlp → faster-whisper → Claude. Optionally sample frames for visual demos. |
 
 ## Install
 
