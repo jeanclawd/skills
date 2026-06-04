@@ -17,11 +17,20 @@ Primary tool: **`ponty`** — a CLI built on top of Google's Gemini API by [yann
 
    Provides a single executable, `ponty`. Source / issues: https://github.com/yanndebray/merleau
 
-2. **Set the API key** if not already set. The package reads `GOOGLE_API_KEY` via `python-dotenv`, so a `.env` next to the working directory or an exported env var both work.
+2. **Set the API key** if not already set. `ponty` (via `merleau`) reads **`GOOGLE_API_KEY`** through `python-dotenv`, so a `.env` next to the working directory or an exported env var both work.
 
    ```bash
    export GOOGLE_API_KEY="..."
    ```
+
+   **`GEMINI_API_KEY` vs `GOOGLE_API_KEY`** — both hold a Gemini Developer API key; which name to set depends on the SDK:
+
+   - `GEMINI_API_KEY` — the canonical name for the newer unified [`google-genai`](https://pypi.org/project/google-genai/) SDK and the Gemini CLI. Prefer it for new code (`genai.Client()` picks it up automatically).
+   - `GOOGLE_API_KEY` — the name used by the older `google-generativeai` SDK; `google-genai` also accepts it as a fallback. **This is the one `ponty`/`merleau` looks for**, so set this for the skill.
+   - **Don't set both.** With `google-genai`, if both are present it uses `GOOGLE_API_KEY` and emits a warning — pick one.
+   - **Vertex AI** (enterprise, via a GCP project) uses no API key: set `GOOGLE_GENAI_USE_VERTEXAI=true` + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` and authenticate with ADC instead.
+
+   Precedence and supported names have shifted across SDK versions — if a key is set but seemingly ignored, check the installed SDK version.
 
 3. **Run.**
 
@@ -98,7 +107,7 @@ For login-walled or YouTube-bot-blocked URLs, add `--cookies-from-browser firefo
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ponty: error: GOOGLE_API_KEY not set` | env var missing | `export GOOGLE_API_KEY=...` or drop into `.env` |
+| `ponty: error: GOOGLE_API_KEY not set` | env var missing — or the key is under `GEMINI_API_KEY` instead | `export GOOGLE_API_KEY=...` (ponty wants this name, not `GEMINI_API_KEY` — see step 2) or drop it into `.env` |
 | `Sign in to confirm you're not a bot` (yt-dlp fallback only) | YouTube bot wall, esp. on cloud IPs | `--cookies-from-browser firefox`; `ponty` itself doesn't hit this because Gemini fetches server-side |
 | Video over 2h | Exceeds Gemini's context | Pre-trim with `ffmpeg -i in.mp4 -t 7200 -c copy out.mp4` and analyze the segment most likely to contain the answer |
 | Gemini refuses (safety filter) | Triggered on adult / violent content classification | Acknowledge, summarize what you can from metadata + the user's own description |
