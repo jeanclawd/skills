@@ -19,13 +19,15 @@ from datetime import datetime
 # Note: the 1M-context tier on Opus/Sonnet 4.x may apply a ~2x surcharge to
 # requests with prompts > 200k tokens — not modeled here.
 PRICING = {
+    "claude-opus-4-8":   {"in": 15.00, "out": 75.00, "cache_w": 18.75, "cache_r": 1.50},
     "claude-opus-4-7":   {"in": 15.00, "out": 75.00, "cache_w": 18.75, "cache_r": 1.50},
     "claude-opus-4-6":   {"in": 15.00, "out": 75.00, "cache_w": 18.75, "cache_r": 1.50},
     "claude-sonnet-4-6": {"in":  3.00, "out": 15.00, "cache_w":  3.75, "cache_r": 0.30},
     "claude-sonnet-4-5": {"in":  3.00, "out": 15.00, "cache_w":  3.75, "cache_r": 0.30},
     "claude-haiku-4-5":  {"in":  1.00, "out":  5.00, "cache_w":  1.25, "cache_r": 0.10},
 }
-FALLBACK_PRICE = PRICING["claude-opus-4-7"]
+# Default to the newest Opus when a session's model is unknown/unlisted.
+FALLBACK_PRICE = PRICING["claude-opus-4-8"]
 
 
 def price_for(model: str | None) -> dict[str, float]:
