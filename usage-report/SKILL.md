@@ -1,15 +1,15 @@
 ---
-name: usage
-description: Generate a Claude Code token-usage and cost report from local session logs (~/.claude/projects/*/*.jsonl). Produces a markdown report and optionally sends it to the user via a configured channel (e.g. Telegram). Use when the user invokes /usage or asks for "usage", "cost", "tokens", "how much have I spent on Claude Code".
+name: usage-report
+description: Generate a Claude Code token-usage and cost report from local session logs (~/.claude/projects/*/*.jsonl). Produces a markdown report and optionally sends it to the user via a configured channel (e.g. Telegram). Use when the user invokes /usage-report (or /usage_report) or asks for "usage", "cost", "tokens", "how much have I spent on Claude Code". Named usage-report (not usage) to avoid clashing with Claude Code's built-in /usage command.
 ---
 
-# usage skill
+# usage-report skill
 
 Produce a Claude Code usage/cost report from local session logs and deliver it to the user.
 
 ## Steps
 
-1. **Run the script**: `python3 ~/.claude/skills/usage/usage.py`
+1. **Run the script**: `python3 ~/.claude/skills/usage-report/usage.py`
    - It walks `~/.claude/projects/*/*.jsonl`, aggregates per session, estimates cost using standard Anthropic pricing.
    - On success, prints the absolute path of the generated markdown file to stdout (e.g. `/tmp/claude-usage-20260516-203145.md`).
    - On failure (no sessions found), exits non-zero with a message to stderr.
